@@ -1,0 +1,9 @@
+prospectos-inicial.json
+*.json
+!manifest.json
+!package.json
+AVANCE.md
+prompt_app_mi_negocio.md
+test/datos-reales/
+shots/
+node_modules/

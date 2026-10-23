@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es-VE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mi Negocio</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="Prospectos, clientes y cobros en un solo lugar.">
+  <meta name="theme-color" content="#0D1522">
+  <meta name="color-scheme" content="dark light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mi Negocio">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/bricolage.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/publicsans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/styles.css">
+  <script>try { const t = localStorage.getItem('mn-tema'); if (t) document.documentElement.dataset.tema = t; } catch {}</script>
+</head>
+<body>
+  <main id="vista" class="vista"></main>
+  <button id="version-nueva" class="version-nueva" hidden>Hay una versión nueva, toca para actualizar</button>
+  <nav id="tabs" class="tabs" aria-label="Secciones"></nav>
+  <div id="hojas"></div>
+  <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
