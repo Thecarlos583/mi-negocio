@@ -1,14 +1,16 @@
 // Guarda la app completa para que funcione sin internet.
 // Al cambiar cualquier archivo, sube VERSION: el teléfono baja todo lo nuevo y avisa «Hay una versión nueva».
-const VERSION = 'mi-negocio-v1';
+const VERSION = 'mi-negocio-v3';
 const ARCHIVOS = [
   './', './index.html', './manifest.json', './css/styles.css',
   './fonts/bricolage.woff2', './fonts/publicsans.woff2',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
   './js/app.js', './js/util.js', './js/telefono.js', './js/ajustes-base.js', './js/datos.js', './js/db.js', './js/estado.js',
-  './js/acciones.js', './js/cobros.js', './js/mensajes.js', './js/hoy-logic.js', './js/tasa.js',
+  './js/acciones.js', './js/cobros.js', './js/mensajes.js', './js/hoy-logic.js', './js/tasa.js', './js/metas.js', './js/tandas.js',
+  './js/precios.js', './js/reglas.js', './js/resumen.js', './js/sync.js', './js/sync-datos.js',
   './js/ui/comun.js', './js/ui/enviar.js', './js/ui/ficha.js', './js/ui/filas.js', './js/ui/hoy.js', './js/ui/mas.js',
-  './js/ui/bienvenida.js', './js/ui/respaldo.js', './js/ui/cliente-datos.js',
+  './js/ui/bienvenida.js', './js/ui/respaldo.js', './js/ui/cliente-datos.js', './js/ui/decidir.js', './js/ui/trato.js', './js/ui/pago.js',
+  './js/ui/clientes.js', './js/ui/prospectos.js', './js/ui/nuevo.js', './js/ui/importar.js', './js/ui/semana.js', './js/ui/graficos.js',
 ];
 
 self.addEventListener('install', e => {

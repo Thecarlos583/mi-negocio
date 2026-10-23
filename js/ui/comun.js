@@ -7,7 +7,7 @@ export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 export const COLOR_LINEA = { 'Páginas': 'var(--paginas)', 'Sistemas': 'var(--sistemas)', 'Afuera': 'var(--afuera)', 'Asistentes': 'var(--asistentes)' };
 export const CLASE_ETAPA = {
   'Por contactar': 'e-por', 'Contactado': 'e-con', 'Respondió': 'e-resp', 'Interesado': 'e-int', 'Llamada agendada': 'e-lla',
-  'Por pagar': 'e-pag', 'Cliente': 'e-cli', 'Se enfrió': 'e-fri', 'No por ahora': 'e-nop', 'Perdido': 'e-per',
+  'Por pagar': 'e-pag', 'Cliente': 'e-cli', 'Se enfrió': 'e-fri', 'No respondió': 'e-nor', 'No por ahora': 'e-nop', 'Perdido': 'e-per',
 };
 export const chipEtapa = e => `<span class="chip ${CLASE_ETAPA[e] || ''}">${esc(e)}</span>`;
 export const chipLinea = l => `<span class="chip-linea" style="--c:${COLOR_LINEA[l] || 'var(--suave)'}">${esc(l)}</span>`;

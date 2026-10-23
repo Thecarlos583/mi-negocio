@@ -3,7 +3,7 @@ import { estado, buscarProspecto, guardarProspecto } from '../estado.js';
 import { abrirHoja, cerrarHoja, confirmar, aviso, $ } from './comun.js';
 import { esc, hoyISO, horaAhora } from '../util.js';
 import { mensajePara, urlWhatsApp, tipoSiguiente } from '../mensajes.js';
-import { registrarEnvio, evento } from '../acciones.js';
+import { registrarEnvio, evento, cerrarSinRespuesta } from '../acciones.js';
 
 const CLAVE = 'mn-pendiente';
 const TITULOS = { primer: 'Primer mensaje', seg2: 'Seguimiento 2', seg3: 'Seguimiento 3', libre: 'Mensaje' };
@@ -25,7 +25,7 @@ export function abrirEnvio(p, tipo = tipoPara(p)) {
     <button class="btn grande wa" id="env-abrir">Abrir WhatsApp</button>`);
   $('#env-abrir', cuerpo).addEventListener('click', () => {
     const t = $('#env-texto', cuerpo).value.trim();
-    localStorage.setItem(CLAVE, JSON.stringify({ id: p.id, tipo, ts: Date.now() }));
+    localStorage.setItem(CLAVE, JSON.stringify({ id: p.id, tipo, texto: t, ts: Date.now() }));
     cerrarHoja(true);
     window.open(urlWhatsApp(p.telefono, t), '_blank', 'noopener');
   });
@@ -36,11 +36,16 @@ async function marcarInstagram(p, tipo) {
   if (ok) await registrar(p, tipo);
 }
 
-async function registrar(p, tipo) {
+async function registrar(p, tipo, texto = '') {
   if (tipo === 'libre') evento(p, hoyISO(), horaAhora(), 'nota', 'Mensaje enviado');
-  else registrarEnvio(p, tipo, hoyISO(), horaAhora(), estado.ajustes.diasSeguimiento);
+  else registrarEnvio(p, tipo, hoyISO(), horaAhora(), estado.ajustes.diasSeguimiento, texto);
   await guardarProspecto(p);
   aviso(tipo === 'primer' ? 'Anotado como Contactado' : 'Anotado');
+  // Después del toque 3 no hay más seguimientos: se pregunta si se cierra.
+  if (p.etapa === 'Contactado' && p.toques > estado.ajustes.diasSeguimiento.length) {
+    const cerrar = await confirmar({ titulo: '¿Lo cierro como No respondió?', texto: `${p.negocio} ya recibió los ${p.toques} mensajes. Si lo cierras ahora, no vuelve a aparecer en seguimientos.`, si: 'Sí, cerrarlo', no: 'Todavía no' });
+    if (cerrar) { cerrarSinRespuesta(p, hoyISO(), horaAhora()); await guardarProspecto(p); aviso('Cerrado como No respondió'); }
+  }
 }
 
 // Al volver a la app: ¿lo enviaste?
@@ -56,5 +61,5 @@ export async function revisarPendiente() {
   const ok = await confirmar({ titulo: `¿Lo enviaste a ${p.negocio}?`, texto: TITULOS[pend.tipo], si: 'Sí, lo envié', no: 'No' });
   localStorage.removeItem(CLAVE);
   preguntando = false;
-  if (ok) await registrar(p, pend.tipo);
+  if (ok) await registrar(p, pend.tipo, pend.texto || '');
 }

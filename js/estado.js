@@ -2,7 +2,7 @@
 import * as db from './db.js';
 import { prepararRespaldo, construirRespaldo } from './datos.js';
 import { completarAjustes } from './ajustes-base.js';
-import { hoyISO } from './util.js';
+import { hoyISO, difDias } from './util.js';
 
 export const estado = { listo: false, hayDatos: false, ajustes: completarAjustes(), prospectos: [], clientes: [], resumenes: [], tandas: [], meta: {} };
 
@@ -30,6 +30,12 @@ export async function guardarCliente(c) {
   if (!estado.clientes.includes(c)) estado.clientes.push(c);
   await db.guardarVarios('clientes', [c]); avisar();
 }
+export async function guardarResumen(r) {
+  const i = estado.resumenes.findIndex(x => x.id === r.id);
+  if (i >= 0) estado.resumenes[i] = r; else estado.resumenes.push(r);
+  await db.guardarVarios('resumenes', [r]); avisar();
+}
+export async function guardarTanda(t) { await db.guardarVarios('tandas', [t]); }
 export async function guardarAjustes() { await db.guardar('ajustes', JSON.parse(JSON.stringify(estado.ajustes)), 'ajustes'); estado.hayDatos = true; avisar(); }
 export async function guardarMeta(clave, valor) { estado.meta[clave] = valor; await db.guardar('meta', valor, clave); }
 
@@ -57,9 +63,10 @@ export async function borrarTodo() {
 
 export const armarRespaldo = () => construirRespaldo(estado, hoyISO());
 
-// Respaldo de la semana: avisa si pasaron 7 días o más (o nunca hubo y ya tiene datos).
+// Aviso de respaldo. Con la nube conectada, el respaldo es automático y solo avisa si la subida lleva 7 días fallando.
 export function respaldoVencido(hoy) {
+  const sync = estado.meta.sync;
+  if (sync?.token) return !!sync.falloDesde && difDias(hoy, sync.falloDesde) >= 7;
   const ref = estado.meta.ultimoRespaldo || estado.meta.creado;
-  if (!ref) return false;
-  return (new Date(hoy) - new Date(ref)) / 86400000 >= 7;
+  return !!ref && difDias(hoy, ref) >= 7;
 }

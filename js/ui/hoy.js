@@ -1,14 +1,13 @@
 // Pantalla Hoy.
 import { estado, buscarProspecto, respaldoVencido } from '../estado.js';
-import { calcularHoy, esReserva } from '../hoy-logic.js';
-import { hoyISO, esc, usd, fechaLarga, fechaCorta, difDias } from '../util.js';
+import { calcularHoy } from '../hoy-logic.js';
+import { hoyISO, esc, usd, fechaLarga, fechaCorta, fechaDMA } from '../util.js';
 import { fila, enlazarFilas } from './filas.js';
-import { abrirFicha } from './ficha.js';
 import { abrirDatosCliente } from './cliente-datos.js';
+import { abrirCliente } from './clientes.js';
 import { hacerRespaldo } from './respaldo.js';
-import { aviso, $ } from './comun.js';
+import { aviso } from './comun.js';
 import { actualizarTasa } from '../tasa.js';
-import { estadoCobro } from '../cobros.js';
 
 const VISIBLES = 8;
 const abiertos = new Set();   // bloques con «ver todos» abierto
@@ -26,8 +25,7 @@ const bloque = (clave, titulo, items, pintar, { vacio = '', nota = '' } = {}) =>
 const barra = (valor, meta) => `<div class="barra"><i style="width:${Math.min(100, meta ? (valor / meta) * 100 : 0)}%"></i></div>`;
 
 function encabezado(h, hoy) {
-  const t = estado.ajustes.tasaBCV;
-  const m = h.meta;
+  const t = estado.ajustes.tasaBCV, m = h.meta;
   return `<header class="hoy-cab">
     <div><p class="eyebrow">${esc(fechaLarga(hoy))}</p><h1>Hoy</h1></div>
     <button class="tasa" data-hoy="tasa" aria-label="Actualizar tasa BCV">
@@ -41,48 +39,56 @@ function encabezado(h, hoy) {
   </section>`;
 }
 
+const FALTA = { fechaPublicacion: 'fecha de publicación' };
+
 function urgente(h, hoy) {
   const items = [...h.urgente];
   if (respaldoVencido(hoy)) items.push({ tipo: 'respaldo' });
-  return bloque('urgente', 'Urgente', items, u => {
+  const resumen = estado.resumenes.filter(r => !r.visto).sort((a, b) => b.desde.localeCompare(a.desde))[0];
+  const tarjetaResumen = resumen ? `<article class="fila tarjeta-alerta" data-ir="semana"><div class="fila-txt"><h4>Tu resumen de la semana está listo</h4><p class="fila-sub">Del ${esc(fechaCorta(resumen.desde))} al ${esc(fechaCorta(resumen.hasta))}. Tócalo para verlo.</p></div></article>` : '';
+  return tarjetaResumen + bloque('urgente', 'Urgente', items, u => {
     if (u.tipo === 'llamada') return fila(u.p, { acciones: ['wa'], sub: `<b class="aviso-txt">${u.p.proximaFecha === hoy ? 'Hoy' : fechaCorta(u.p.proximaFecha)}${u.p.proximaHora ? ' a las ' + esc(u.p.proximaHora) : ''}</b> · ${esc(u.p.proximoPaso || 'Llamada')}` });
     if (u.tipo === 'pago') return fila(u.p, { acciones: ['wa'], sub: `<b class="aviso-txt">Por cobrar</b> · ${esc(u.p.proximoPaso || u.p.nota || '')}` });
-    if (u.tipo === 'cobro') return `<article class="fila tarjeta-alerta" data-c="${esc(u.cliente.id)}"><div class="fila-txt"><h4>${esc(u.cliente.negocio)}</h4><p class="fila-sub"><b class="aviso-txt">${esc(u.estado.texto)}</b> · mensualidad ${usd(u.cliente.mensual || 0)}</p></div></article>`;
-    if (u.tipo === 'datos') return `<article class="fila tarjeta-alerta" data-datos="${esc(u.cliente.id)}"><div class="fila-txt"><h4>Completa los datos de ${esc(u.cliente.negocio)}</h4><p class="fila-sub">Falta: ${u.cliente.pendienteConfirmar.map(x => esc(x === 'fechaPublicacion' ? 'fecha de publicación' : x)).join(', ')}</p></div><div class="fila-acc"><button class="mini-btn" data-datos-btn="${esc(u.cliente.id)}">Completar</button></div></article>`;
+    if (u.tipo === 'cobro') return `<article class="fila tarjeta-alerta" data-cliente="${esc(u.cliente.id)}"><div class="fila-txt"><h4>${esc(u.cliente.negocio)}</h4><p class="fila-sub"><b class="aviso-txt">${esc(u.estado.texto)}</b> · mensualidad ${usd(u.cliente.mensual || 0)}${u.estado.aviso ? ` · ${esc(u.estado.aviso)}` : ''}</p></div><div class="fila-acc"><button class="mini-btn">Cobrar</button></div></article>`;
+    if (u.tipo === 'datos') return `<article class="fila tarjeta-alerta" data-datos="${esc(u.cliente.id)}"><div class="fila-txt"><h4>Completa los datos de ${esc(u.cliente.negocio)}</h4><p class="fila-sub">Falta: ${u.cliente.pendienteConfirmar.map(x => esc(FALTA[x] || x)).join(', ')}</p></div><div class="fila-acc"><button class="mini-btn" data-datos-btn="${esc(u.cliente.id)}">Completar</button></div></article>`;
     return `<article class="fila tarjeta-alerta"><div class="fila-txt"><h4>Hace tiempo sin respaldo</h4><p class="fila-sub">Guarda una copia de tus datos para no perderlos.</p></div><div class="fila-acc"><button class="mini-btn" data-hoy="respaldo">Hacer respaldo</button></div></article>`;
   });
+}
+
+const msgPrevia = p => (p.mensaje ? `<span class="msg-previa">${esc(p.mensaje)}</span>` : esc(p.proximoPaso || ''));
+
+function primeros(h, hoy) {
+  const pr = h.primeros, todos = abiertos.has('prim');
+  const lista = todos ? pr.lista : pr.lista.slice(0, VISIBLES);
+  const cab = pr.tanda ? `<div class="tanda-cab"><span class="eyebrow">Tanda del día</span><b>${esc(pr.tanda.nombre)}</b><small>${esc(fechaDMA(pr.tanda.fecha))}</small></div>` : '';
+  return `<section class="bloque"><h2>Primeros mensajes de hoy</h2>
+    <div class="contador"><b class="${pr.llegoAlLimite ? 'lleno' : ''}">${pr.enviados}</b><span>de ${pr.limite}</span></div>
+    <div class="cupos">${Object.entries(pr.porLinea).map(([l, c]) => `<span class="cupo ${c.enviados >= c.cupo ? 'ok' : ''}" style="--c:var(--${l === 'Páginas' ? 'paginas' : l === 'Sistemas' ? 'sistemas' : 'afuera'})"><i></i>${esc(l)} <b>${c.enviados}/${c.cupo}</b></span>`).join('')}</div>
+    ${pr.llegoAlLimite ? `<p class="alerta-suave">Ya mandaste ${pr.limite} en frío hoy. Para cuidar el número, sigue mañana.</p>` : ''}
+    ${cab}
+    ${pr.lista.length ? lista.map(p => fila(p, { acciones: ['wa'], sub: msgPrevia(p) })).join('') : '<p class="vacio">No hay tanda para hoy. Pídele a Claude la tanda del día e impórtala con el botón +.</p>'}
+    ${pr.lista.length > VISIBLES ? `<button class="ver-mas" data-vermas="prim">${todos ? 'Ver menos' : `Ver los ${pr.lista.length}`}</button>` : ''}
+    ${pr.reservas.length ? `<details class="reservas"><summary>Reservas <span class="cuenta">${pr.reservas.length}</span><small>Ábrelas solo si te faltan negocios para completar el cupo</small></summary>${pr.reservas.map(p => fila(p, { acciones: ['wa'], sub: esc(p.origenes.slice(-1)[0] || ''), extra: '<span class="chip-reserva">reserva</span>' })).join('')}</details>` : ''}
+  </section>`;
 }
 
 export function pintarHoy(vista) {
   const hoy = hoyISO();
   const h = calcularHoy(estado, hoy);
-  const { primeros: pr } = h;
-  const enc = encabezado(h, hoy);
 
   const interesados = bloque('interesados', 'Interesados', h.interesados, p =>
-    fila(p, { acciones: ['wa'], sub: esc(p.proximoPaso || p.nota || 'Sin próximo paso') + (p.proximaFecha ? ` · <i>${p.proximaFecha === hoy ? 'hoy' : 'desde ' + fechaCorta(p.proximaFecha)}</i>` : '') }),
+    fila(p, { acciones: ['wa', 'seguir', 'muerto'], sub: esc(p.proximoPaso || p.nota || 'Sin próximo paso') + (p.proximaFecha ? ` · <i>${p.proximaFecha === hoy ? 'hoy' : 'desde ' + fechaCorta(p.proximaFecha)}</i>` : '') }),
     { vacio: h.proximos.length ? '' : 'Nadie por atender hoy.' });
-  const proximos = h.proximos.length ? bloque('proximos', 'Próximos días', h.proximos, p =>
-    fila(p, { acciones: ['wa'], sub: `${esc(p.proximoPaso || '')} · <i>${esc(fechaCorta(p.proximaFecha))}</i>` })) : '';
-
-  const seguimientos = bloque('seg', 'Seguimientos de hoy', h.seguimientos, ({ p, due, atraso }) =>
-    fila(p, { acciones: ['wa', 'resp', 'pos'], sub: `Toque ${p.toques + 1} · ${atraso > 0 ? `atrasado ${atraso} día${atraso > 1 ? 's' : ''}` : 'toca hoy'}` }),
+  const proximos = bloque('proximos', 'Próximos días', h.proximos, p =>
+    fila(p, { acciones: ['wa'], sub: `${esc(p.proximoPaso || '')} · <i>${esc(fechaCorta(p.proximaFecha))}</i>` }));
+  const seguimientos = bloque('seg', 'Seguimientos de hoy', h.seguimientos, ({ p, atraso }) =>
+    fila(p, { acciones: ['wa', 'resp', 'seguir', 'muerto'], sub: `Toque ${p.toques + 1} · ${atraso > 0 ? `atrasado ${atraso} día${atraso > 1 ? 's' : ''}` : 'toca hoy'}` }),
     { vacio: 'No hay seguimientos pendientes.', nota: h.seguimientos.length > 10 ? 'Hay muchos atrasados: haz estos antes de mandar una tanda nueva.' : '' });
+  const cerrar = bloque('cerrar', 'Por decidir', h.paraCerrar, p =>
+    fila(p, { acciones: ['seguir', 'muerto', 'resp'], sub: `Ya recibió los ${p.toques} mensajes desde el ${esc(fechaCorta(p.primerContacto))} y no respondió` }),
+    { nota: 'Ya les escribiste todos los seguimientos. ¿Sigues o los das por muertos?' });
 
-  const hecho = pr.enviados;
-  const primeros = `<section class="bloque"><h2>Primeros mensajes de hoy</h2>
-    <div class="contador"><b class="${pr.llegoAlLimite ? 'lleno' : ''}">${hecho}</b><span>de ${pr.limite}</span></div>
-    <div class="cupos">${Object.entries(pr.porLinea).map(([l, c]) => `<span class="cupo ${c.enviados >= c.cupo ? 'ok' : ''}" style="--c:var(--${l === 'Páginas' ? 'paginas' : l === 'Sistemas' ? 'sistemas' : 'afuera'})"><i></i>${esc(l)} <b>${c.enviados}/${c.cupo}</b></span>`).join('')}</div>
-    ${pr.llegoAlLimite ? `<p class="alerta-suave">Ya mandaste ${pr.limite} en frío hoy. Para cuidar el número, sigue mañana.</p>` : ''}
-    ${pr.lista.length ? pr.lista.slice(0, abiertos.has('prim') ? 999 : VISIBLES).map(p => fila(p, { acciones: ['wa'], sub: esc(p.proximoPaso || p.origenes.slice(-1)[0] || ''), extra: esReserva(p) ? '<span class="chip-reserva">reserva</span>' : '' })).join('') : '<p class="vacio">No hay prospectos por contactar. Pídele la tanda del día a Claude.</p>'}
-    ${pr.lista.length > VISIBLES ? `<button class="ver-mas" data-vermas="prim">${abiertos.has('prim') ? 'Ver menos' : `Ver los ${pr.lista.length}`}</button>` : ''}</section>`;
-
-  const reactivar = h.reactivar.length ? bloque('reac', 'Para reactivar', h.reactivar, p =>
-    fila(p, { acciones: ['wa'], sub: `Sin respuesta desde el ${esc(fechaCorta(p.primerContacto))} · ${difDias(hoy, p.primerContacto)} días` }),
-    { nota: 'Más de 90 días sin respuesta. Aquí no estorban en Hoy.' }) : '';
-
-  vista.innerHTML = `${enc}${urgente(h, hoy)}${interesados}${proximos}${seguimientos}${primeros}${reactivar}<div class="aire"></div>`;
-
+  vista.innerHTML = `${encabezado(h, hoy)}${urgente(h, hoy)}${interesados}${proximos}${seguimientos}${cerrar}${primeros(h, hoy)}<div class="aire"></div>`;
   if (!enlazado) { enlazar(vista); enlazado = true; }
 }
 
@@ -93,6 +99,10 @@ function enlazar(vista) {
     if (vm) { const k = vm.dataset.vermas; abiertos.has(k) ? abiertos.delete(k) : abiertos.add(k); return pintarHoy(vista); }
     const dat = e.target.closest('[data-datos]');
     if (dat) { const c = estado.clientes.find(c => c.id === dat.dataset.datos); if (c) abrirDatosCliente(c); return; }
+    const cli = e.target.closest('[data-cliente]');
+    if (cli) { const c = estado.clientes.find(c => c.id === cli.dataset.cliente); if (c) abrirCliente(c.id); return; }
+    const ir = e.target.closest('[data-ir]');
+    if (ir) { location.hash = ir.dataset.ir; return; }
     const h = e.target.closest('[data-hoy]');
     if (!h) return;
     if (h.dataset.hoy === 'respaldo') return hacerRespaldo();

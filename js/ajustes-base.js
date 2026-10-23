@@ -1,6 +1,10 @@
 // Valores de partida. Lo que venga en un respaldo los pisa; lo que falte se completa con esto.
-export const ETAPAS = ['Por contactar', 'Contactado', 'Respondió', 'Interesado', 'Llamada agendada', 'Por pagar', 'Cliente', 'Se enfrió', 'No por ahora', 'Perdido'];
+export const ETAPAS = ['Por contactar', 'Contactado', 'Respondió', 'Interesado', 'Llamada agendada', 'Por pagar', 'Cliente', 'Se enfrió', 'No respondió', 'No por ahora', 'Perdido'];
 export const LINEAS = ['Páginas', 'Sistemas', 'Afuera', 'Asistentes'];
+// Etapas cerradas: no generan seguimientos ni aparecen en Hoy.
+export const ETAPAS_CERRADAS = ['No respondió', 'Se enfrió', 'No por ahora', 'Perdido'];
+export const ETAPAS_MUERTAS = ETAPAS_CERRADAS;
+export const ETAPAS_VIVAS = ['Contactado', 'Respondió', 'Interesado', 'Llamada agendada', 'Por pagar'];
 export const ETAPAS_ACTIVAS = ['Respondió', 'Interesado', 'Llamada agendada', 'Por pagar'];
 
 export const PLANTILLAS_BASE = {
@@ -36,7 +40,6 @@ export const AJUSTES_BASE = {
   limiteFrioDiario: 15,
   cupoDiario: { Afuera: 5, Sistemas: 5, Páginas: 5 },
   diasSeguimiento: [3, 7],
-  diasReactivar: 90,
   tasaBCV: null,
   tasasHistorial: [],
   precios: {},
