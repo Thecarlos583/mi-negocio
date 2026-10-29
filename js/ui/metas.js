@@ -62,14 +62,51 @@ export function pintarMetas(el) {
     <div class="card glass dream">
       <div class="lbl" style="color:rgba(255,255,255,.75)">Para qué trabajas</div>
       <div class="big" style="color:#fff;font-size:26px">${sue.nombre} · ${sue.cuando}</div>
-      ${escenaCamioneta()}
+      <div class="escena-caja">${escenaCamioneta()}
+        <label class="foto-btn">📷 <span>${fotoURL ? 'Cambiar foto' : 'Poner tu foto de la Tasman'}</span><input type="file" accept="image/*" id="foto-sueno" hidden></label></div>
       <div class="bar" style="background:rgba(255,255,255,.15)"><b data-w="${Math.max(1, sue.pct)}" style="background:#F2C14E"></b></div>
       <div class="small" style="color:rgba(255,255,255,.8)">Vas el <b style="color:#F2C14E">${sue.pct < 10 ? sue.pct.toFixed(1).replace('.', ',') : Math.round(sue.pct)}%</b> del camino. El escalón de $3.000 al mes es el que la hace posible.</div>
     </div>`;
 }
 
+// ---------- Tu foto de la camioneta ----------
+// Se guarda solo en el teléfono (Cache API, aparte del respaldo, para no subir la imagen al repo).
+const CACHE_FOTO = 'mi-negocio-foto', CLAVE_FOTO = './foto-sueno';
+let fotoURL = null;
+async function cargarFoto() {
+  try {
+    const r = await (await caches.open(CACHE_FOTO)).match(CLAVE_FOTO);
+    if (!r) return;
+    fotoURL = URL.createObjectURL(await r.blob());
+    document.querySelectorAll('.escena').forEach(e => e.replaceWith(htmlAElemento(escenaFoto())));
+    document.querySelectorAll('.foto-btn span').forEach(x => { x.textContent = 'Cambiar foto'; });
+  } catch {}
+}
+const htmlAElemento = h => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild; };
+const escenaFoto = () => `<div class="escena foto" aria-hidden="true"><img src="${fotoURL}" alt=""></div>`;
+cargarFoto();
+
+// La achica a 1400 px y la guarda como JPEG para que pese poco.
+async function guardarFoto(archivo) {
+  const img = await createImageBitmap(archivo).catch(() => null);
+  let blob = archivo;
+  if (img) {
+    const k = Math.min(1, 1400 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    blob = await new Promise(ok => c.toBlob(b => ok(b || archivo), 'image/jpeg', 0.86));
+  }
+  await (await caches.open(CACHE_FOTO)).put(CLAVE_FOTO, new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } }));
+  if (fotoURL) URL.revokeObjectURL(fotoURL);
+  fotoURL = null;
+  await cargarFoto();
+  aviso('Listo, ahí está tu camioneta');
+}
+document.addEventListener('change', e => { if (e.target.id === 'foto-sueno' && e.target.files?.[0]) guardarFoto(e.target.files[0]); });
+
 // Camioneta genérica dibujada a mano (sin marcas): rueda por un camino de montaña, en bucle suave.
 function escenaCamioneta() {
+  if (fotoURL) return escenaFoto();
   return `<div class="escena" aria-hidden="true">
     <svg viewBox="0 0 320 120" preserveAspectRatio="xMidYMid slice">
       <defs>

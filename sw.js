@@ -1,6 +1,6 @@
 // Guarda la app completa para que abra sin internet.
 // Al cambiar cualquier archivo, sube VERSION y agrega los archivos nuevos a ARCHIVOS.
-const VERSION = 'mi-negocio-v2-3';
+const VERSION = 'mi-negocio-v2-4';
 const ARCHIVOS = [
   './', './index.html', './manifest.json', './css/app.css', './fonts/manrope.woff2',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/inicio-828x1792.png',
@@ -33,7 +33,7 @@ self.addEventListener('install', e => {
 self.addEventListener('message', e => { if (e.data === 'saltar') self.skipWaiting(); });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== 'mi-negocio-foto').map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 // Primero lo guardado (rápido y sin internet). Lo de otros sitios (tasa BCV, GitHub, WhatsApp) no se toca.
