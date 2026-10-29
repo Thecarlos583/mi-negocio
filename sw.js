@@ -1,6 +1,6 @@
 // Guarda la app completa para que abra sin internet.
 // Al cambiar cualquier archivo, sube VERSION y agrega los archivos nuevos a ARCHIVOS.
-const VERSION = 'mi-negocio-v2-6';
+const VERSION = 'mi-negocio-v2-7';
 const ARCHIVOS = [
   './', './index.html', './manifest.json', './css/app.css', './fonts/manrope.woff2',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/inicio-828x1792.png',
