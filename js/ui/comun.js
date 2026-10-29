@@ -58,7 +58,7 @@ export function aviso(texto) {
 // Las tarjetas suben una tras otra; barras, anillos y gráficas se llenan desde cero; los números cuentan desde 0.
 export function animarEntrada(vista) {
   const piezas = $$('h1, .sub, .card, .steps, :scope > .btn', vista);
-  piezas.forEach((c, i) => { c.style.animation = 'none'; c.offsetWidth; c.style.animation = ''; c.style.animationDelay = Math.min(i * 70, 420) + 'ms'; });
+  piezas.forEach((c, i) => { c.style.animation = 'none'; c.offsetWidth; c.style.animation = ''; c.style.animationDelay = Math.min(i * 55, 330) + 'ms'; });
   $$('.bar > b', vista).forEach(b => { b.style.transition = 'none'; b.style.width = '0'; });
   $$('[data-h]', vista).forEach(i => { i.style.transition = 'none'; i.style.height = '0'; });
   $$('.ring-fill', vista).forEach(r => { r.style.transition = 'none'; r.style.strokeDashoffset = r.dataset.largo; });
@@ -68,7 +68,7 @@ export function animarEntrada(vista) {
     $$('[data-h]', vista).forEach(i => { i.style.transition = ''; i.style.height = Math.max(0, Math.min(100, +i.dataset.h || 0)) + '%'; });
     $$('.ring-fill', vista).forEach(r => { r.style.transition = ''; r.style.strokeDashoffset = r.dataset.largo * (1 - Math.min(1, (+r.dataset.p || 0) / 100)); });
   };
-  quieto() ? llenar() : setTimeout(llenar, 150);
+  quieto() ? llenar() : requestAnimationFrame(() => setTimeout(llenar, 120));
   $$('[data-n]', vista).forEach(contar);
 }
 
@@ -76,8 +76,8 @@ export function animarEntrada(vista) {
 function contar(el) {
   const meta = +el.dataset.n || 0, fmt = el.dataset.fmt === 'usd' ? usdTxt : n => Math.round(n).toLocaleString('es-VE');
   if (quieto() || !meta) { el.textContent = fmt(meta); return; }
-  const t0 = performance.now(), dur = 900;
-  const paso = t => { const k = Math.min(1, (t - t0) / dur); el.textContent = fmt(k < 1 ? meta * (1 - Math.pow(1 - k, 3)) : meta); if (k < 1) requestAnimationFrame(paso); };
+  const t0 = performance.now(), dur = 1200;
+  const paso = t => { const k = Math.min(1, (t - t0) / dur); el.textContent = fmt(k < 1 ? meta * (1 - Math.pow(2, -10 * k)) : meta); if (k < 1) requestAnimationFrame(paso); };
   requestAnimationFrame(paso);
 }
 const usdTxt = n => '$' + n.toLocaleString('es-VE', { minimumFractionDigits: Math.round(n * 100) % 100 ? 2 : 0, maximumFractionDigits: 2 });

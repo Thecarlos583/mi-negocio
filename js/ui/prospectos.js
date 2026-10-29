@@ -54,12 +54,14 @@ export function pintarProspectos(el) {
 
     <div class="card glass">
       <div class="sec"><h3>Seguimientos de hoy</h3><span class="chip ${segs.length ? 'red' : 'gray'}">${segs.length}</span></div>
+      ${segs.length > 1 ? `<button class="btn light full chico" data-muertos-todos style="margin:-2px 0 6px">✖ Dar por muertos a los ${segs.length}</button>` : ''}
       ${segs.map(x => `<div class="item">
         <div class="ic">${iconoProspecto(x.p)}</div>
         <div class="grow" data-estado="${x.p.id}"><div class="name">${esc(x.p.negocio)}</div>
           <div class="small">${esc(x.p.tanda || 'Sin tanda')} · ${ordinal(x.numero)} seguimiento${x.atraso ? ` · <b style="color:#a8322e">atrasado ${plural(x.atraso, 'día', 'días')}</b>` : ''}</div></div>
-        <button class="btn light chico" data-seguir="${x.p.id}">Seguimiento</button></div>`).join('') || '<p class="vacio">Hoy no toca ningún seguimiento.</p>'}
-      <p class="note">Vienen de tandas anteriores. Nunca se mezclan con la de hoy.</p>
+        <button class="btn light chico" data-seguir="${x.p.id}">Seguimiento</button>
+        <button class="btn-x" data-muerto="${x.p.id}" aria-label="Dar por muerto">✖</button></div>`).join('') || '<p class="vacio">Hoy no toca ningún seguimiento.</p>'}
+      <p class="note">Vienen de tandas anteriores. Toca ✖ si ya no vale la pena: pasa al historial y suma a tu recorrido.</p>
     </div>
 
     <div class="card glass">
@@ -68,7 +70,8 @@ export function pintarProspectos(el) {
         <div class="ic">${iconoProspecto(p)}</div>
         <div class="grow"><div class="name">${esc(p.negocio)}</div>
           <div class="small">${esc(p.proximoPaso || 'Sin próximo paso')}${p.proximaFecha ? ` · <span ${p.proximaFecha < hoy ? 'style="color:#a8322e;font-weight:700"' : ''}>${cuandoPaso(p.proximaFecha, hoy)}</span>` : ''}</div></div>
-        <span class="chip ${CHIP_ETAPA[p.etapa] ?? ''}">${esc(p.etapa)}</span></div>`).join('') || '<p class="vacio">Cuando alguien te responda, tócalo en la tanda o en los seguimientos.</p>'}
+        <span class="chip ${CHIP_ETAPA[p.etapa] ?? ''}">${esc(p.etapa)}</span>
+        <button class="btn-x" data-muerto="${p.id}" aria-label="Dar por muerto">✖</button></div>`).join('') || '<p class="vacio">Cuando alguien te responda, tócalo en la tanda o en los seguimientos.</p>'}
     </div>
     <p class="note"><button class="link" data-pegar>Pegar tanda</button></p>`;
 }
@@ -90,6 +93,30 @@ async function seguir(id) {
   abrirWhatsApp(P.linkWhatsApp(p.telefono, P.mensajeSeguimiento(p, n)));
   P.marcarSeguimiento(p, hoy);
   await guardar();
+}
+
+// ✖: pasa al historial sin preguntar (suma al recorrido y no vuelve a aparecer).
+async function darPorMuerto(id) {
+  const p = buscar(id);
+  if (!p) return;
+  P.cambiarEtapa(s, p, 'No respondió', {}, hoyISO());
+  aviso(`${p.negocio} pasó al historial`);
+  await guardar();
+}
+
+function hojaMuertosTodos() {
+  const hoy = hoyISO(), lista = P.seguimientosDeHoy(s, hoy).map(x => x.p);
+  if (!lista.length) return;
+  const cuerpo = abrirHoja(`
+    <div class="sec"><h3>Dar por muertos</h3><button class="link" data-cerrar>Cerrar</button></div>
+    <p class="small">Los ${lista.length} seguimientos de hoy pasan al historial y no vuelven a aparecer. Suman a tu recorrido.</p>
+    <button class="btn dark full" id="m-ok" style="margin-top:10px">Sí, darlos por muertos</button>`);
+  $('#m-ok', cuerpo).addEventListener('click', async () => {
+    lista.forEach(p => P.cambiarEtapa(s, p, 'No respondió', {}, hoy));
+    cerrarHoja(true);
+    aviso(`${plural(lista.length, 'prospecto pasó', 'prospectos pasaron')} al historial`);
+    await guardar();
+  });
 }
 
 function hojaEstado(id) {
@@ -148,6 +175,8 @@ document.addEventListener('click', e => {
   const t = e.target;
   const w = t.closest('[data-escribir]'); if (w) { escribir(w.dataset.escribir); return; }
   const sg = t.closest('[data-seguir]'); if (sg) { seguir(sg.dataset.seguir); return; }
+  const mu = t.closest('[data-muerto]'); if (mu) { darPorMuerto(mu.dataset.muerto); return; }
+  if (t.closest('[data-muertos-todos]')) { hojaMuertosTodos(); return; }
   if (t.closest('[data-pegar]')) { hojaPegar(); return; }
   const est = t.closest('[data-estado]'); if (est) hojaEstado(est.dataset.estado);
 });
