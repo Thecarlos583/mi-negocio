@@ -46,3 +46,16 @@ export function calendarioMes(constancia, hoy) {
 export function suenio(clientes, hoy) {
   return { ...SUENO, dias: Math.max(0, difDias(SUENO.fecha, hoy)), pct: Math.min(100, (ingresoFijo(clientes) / ESCALONES.at(-1)) * 100) };
 }
+
+// Lo que hace falta ganar al mes para sacar la camioneta y mantenerla (estimado, sin el precio total).
+// Referencia: financiamiento típico de concesionarios en Venezuela (50 % de inicial y 24 meses, en dólares).
+export const CAMIONETA = { precio: 55000, inicialPct: 0.5, meses: 24, seguro: 100, mantener: 100, fechaInicial: '2028-10-10' };
+export function planCamioneta(clientes, hoy, c = CAMIONETA) {
+  const inicial = Math.round(c.precio * c.inicialPct);
+  const cuota = Math.round((c.precio - inicial) / c.meses);
+  const mensual = cuota + c.seguro + c.mantener;
+  const mesesParaInicial = Math.max(1, Math.round(difDias(c.fechaInicial, hoy) / 30.44));
+  const ahorroMensual = Math.ceil(inicial / mesesParaInicial / 50) * 50;
+  const ingreso = ingresoFijo(clientes);
+  return { ...c, inicial, cuota, mensual, mesesParaInicial, ahorroMensual, ingreso, pct: Math.min(100, (ingreso / mensual) * 100) };
+}

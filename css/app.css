@@ -186,23 +186,11 @@ h1 { font-size: 27px; font-weight: 700; letter-spacing: -.6px; margin: 22px 4px 
 /* ✖ dar por muerto */
 .btn-x { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255, 255, 255, .55); color: var(--ink2); font-size: 12px; cursor: pointer; transition: transform .25s var(--sube), background .3s ease; }
 .btn-x:active { transform: scale(.88); background: rgba(217, 83, 79, .15); color: #a8322e; }
-/* Escena de la camioneta */
-.escena { margin: 10px -4px 10px; border-radius: 16px; overflow: hidden; height: 120px; }
-.escena svg { display: block; width: 100%; height: 100%; }
-.escena .capa, .escena .rayas { will-change: transform; }
-.escena .lejos { animation: correr 38s linear infinite; }
-.escena .cerca { animation: correr 20s linear infinite; }
-.escena .rayas { animation: correr 3.2s linear infinite; }
-.escena .rueda { transform-box: fill-box; transform-origin: center; animation: girar .7s linear infinite; }
-.escena .camioneta { animation: rebote 1.6s ease-in-out infinite; }
-@keyframes correr { to { transform: translate3d(-320px, 0, 0); } }
-@keyframes girar { to { transform: rotate(360deg); } }
-@keyframes rebote { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -1.2px, 0); } }
-
-/* Tu foto de la camioneta: se mueve despacio, como en una película */
-.escena-caja { position: relative; }
-.escena.foto { height: 180px; position: relative; background: #2a221c; }
-.escena.foto img { width: 100%; height: 100%; object-fit: cover; display: block; transform-origin: 60% 50%; animation: pelicula 22s ease-in-out infinite alternate; will-change: transform; }
-.escena.foto::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(27, 23, 18, 0) 55%, rgba(27, 23, 18, .55)); }
-@keyframes pelicula { from { transform: scale(1.04) translate3d(-1.5%, 0, 0); } to { transform: scale(1.14) translate3d(1.5%, -1%, 0); } }
-.foto-btn { position: absolute; right: 8px; top: 18px; z-index: 2; display: inline-flex; gap: 6px; align-items: center; padding: 7px 11px; border-radius: 999px; background: rgba(27, 23, 18, .6); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+/* Meta para la camioneta */
+.desglose { margin: 12px 0 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .12); }
+.desglose div { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; color: rgba(255, 255, 255, .85); }
+.desglose div + div { border-top: 1px solid rgba(255, 255, 255, .08); }
+.desglose b { color: #fff; font-variant-numeric: tabular-nums; }
+.inicial { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .12); }
+.inicial b { display: block; font-size: 20px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+.inicial small { display: block; font-size: 11px; color: rgba(255, 255, 255, .65); }
