@@ -16,3 +16,5 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 export const usd = n => '$' + (Math.round(n * 100) / 100).toLocaleString('es-VE', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
 export const bs = n => 'Bs ' + n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+export const MESES_LARGOS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+export const fechaCompleta = s => { const d = aFecha(s); return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES_LARGOS[d.getMonth()]}`; };

@@ -1,122 +1,153 @@
-// Prospectos: lista con búsqueda, filtros, orden, vivos o muertos, y la revisión rápida «¿Ya le escribí?».
-import { estado, buscarProspecto } from '../estado.js';
-import { esc, fechaCorta, fechaDMA } from '../util.js';
-import { ETAPAS, LINEAS, ETAPAS_MUERTAS } from '../ajustes-base.js';
-import { normalizarTelefono, normalizarNombre, buscarRepetido, describirRepetido } from '../telefono.js';
-import { fila, enlazarFilas } from './filas.js';
-import { abrirHoja, cerrarHoja, chipEtapa, $ } from './comun.js';
-import { abrirFicha } from './ficha.js';
-import { abrirNuevo } from './nuevo.js';
+// Prospectos: tu recorrido, la tanda de hoy, los seguimientos de hoy y los que respondieron.
+import { s, guardar } from '../datos.js';
+import { hoyISO, fechaCorta, difDias } from '../util.js';
+import * as P from '../logica/prospectos.js';
+import { aplicarTexto } from '../sync.js';
+import { formCliente } from './clientes.js';
+import { $, $$, esc, abrirHoja, cerrarHoja, aviso, abrirWhatsApp, iconoProspecto, ordinal, plural } from './comun.js';
 
-const PASO = 40;
-const f = { q: '', estado: 'vivos', etapa: '', linea: '', nicho: '', pais: '', tanda: '', orden: 'accion', limite: PASO };
-let enlazado = false;
+const CHIP_ETAPA = { 'Respondió': 'amb', 'Interesado': '', 'Llamada agendada': '', 'Por pagar': 'amb', 'No por ahora': 'gray' };
+const buscar = id => s.prospectos.find(p => p.id === id);
 
-const esMuerta = p => ETAPAS_MUERTAS.includes(p.etapa);
-const numTanda = p => Math.max(0, ...(p.origenes || []).map(o => Number((/Tanda (\d+)/.exec(o) || [])[1]) || 0));
-
-function filtrar() {
-  const q = normalizarNombre(f.q), dig = f.q.replace(/\D/g, '');
-  let l = estado.prospectos.filter(p => {
-    if (f.estado === 'vivos' && esMuerta(p)) return false;
-    if (f.estado === 'muertos' && !esMuerta(p)) return false;
-    if (f.etapa && p.etapa !== f.etapa) return false;
-    if (f.linea && p.linea !== f.linea) return false;
-    if (f.nicho && p.nicho !== f.nicho) return false;
-    if (f.pais && p.pais !== f.pais) return false;
-    if (f.tanda && !(p.origenes || []).includes(f.tanda)) return false;
-    if (q || dig.length >= 3) {
-      const porNombre = q && normalizarNombre(p.negocio).includes(q);
-      const porTel = dig.length >= 3 && (p.telefono || '').includes(normalizarTelefono(dig).length >= 10 ? normalizarTelefono(dig) : dig);
-      if (!porNombre && !porTel) return false;
-    }
-    return true;
-  });
-  const fecha = p => p.primerContacto || '';
-  if (f.orden === 'fecha') l.sort((a, b) => fecha(b).localeCompare(fecha(a)));
-  else if (f.orden === 'nombre') l.sort((a, b) => a.negocio.localeCompare(b.negocio, 'es'));
-  else l.sort((a, b) => (a.proximaFecha ? 0 : 1) - (b.proximaFecha ? 0 : 1) || (a.proximaFecha || '').localeCompare(b.proximaFecha || '') || fecha(b).localeCompare(fecha(a)));
-  return l;
+function cuandoPaso(f, hoy) {
+  if (!f) return '';
+  const d = difDias(f, hoy);
+  return d === 0 ? 'hoy' : d === 1 ? 'mañana' : d > 0 ? fechaCorta(f) : `atrasado desde el ${fechaCorta(f)}`;
 }
 
-const opciones = (valores, actual, todas) => `<option value="">${todas}</option>${valores.map(v => `<option ${v === actual ? 'selected' : ''}>${esc(v)}</option>`).join('')}`;
+export function pintarProspectos(el) {
+  const hoy = hoyISO(), r = P.recorrido(s, hoy);
+  const tanda = P.tandaDeHoy(s, hoy), reservas = P.reservasDeHoy(s, hoy);
+  const segs = P.seguimientosDeHoy(s, hoy), resp = P.respondieron(s);
+  const max = Math.max(1, ...r.semanas.map(x => x.total)), min = Math.min(...r.semanas.map(x => x.total));
+  const alto = t => 18 + ((t - min) / Math.max(1, max - min)) * 82;
 
-function subDe(p) {
-  if (p.proximaFecha && !esMuerta(p)) return `<b class="aviso-txt">${esc(fechaCorta(p.proximaFecha))}</b> · ${esc(p.proximoPaso || 'Próximo paso')}`;
-  if (p.primerContacto) return `Le escribiste el ${esc(fechaDMA(p.primerContacto))}${p.toques > 1 ? ` · ${p.toques} mensajes` : ''}${p.origenes?.length ? ' · ' + esc(p.origenes.at(-1)) : ''}`;
-  return esc(p.nota || p.origenes?.at(-1) || 'Sin contactar');
-}
+  el.innerHTML = `
+    <h1>Prospectos</h1>
+    <p class="sub">A quién escribirle hoy y cómo vas</p>
 
-function filas() {
-  const l = filtrar(), ver = l.slice(0, f.limite);
-  const acciones = p => (esMuerta(p) ? ['revivir'] : p.etapa === 'Cliente' ? [] : ['wa']);
-  return `<p class="mini cuenta-lista">${l.length} resultado${l.length === 1 ? '' : 's'}</p>
-    ${ver.map(p => fila(p, { sub: subDe(p), acciones: acciones(p) })).join('') || '<p class="vacio">No hay prospectos con esos filtros.</p>'}
-    ${l.length > ver.length ? `<button class="ver-mas" data-mas="1">Ver ${Math.min(PASO, l.length - ver.length)} más</button>` : ''}`;
-}
-
-export function pintarProspectos(vista) {
-  const nichos = [...new Set(estado.prospectos.map(p => p.nicho).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-  const paises = [...new Set(estado.prospectos.map(p => p.pais).filter(Boolean))].sort();
-  const tandas = [...new Set(estado.prospectos.flatMap(p => p.origenes || []))].sort((a, b) => numTanda({ origenes: [b] }) - numTanda({ origenes: [a] }) || a.localeCompare(b));
-  const activos = ['etapa', 'linea', 'nicho', 'pais', 'tanda'].filter(k => f[k]).length;
-  vista.innerHTML = `
-    <header class="hoy-cab"><div><p class="eyebrow">${estado.prospectos.length} negocios</p><h1>Prospectos</h1></div>
-      <button class="tasa" data-p="revisar"><small>¿Ya le escribí?</small><b>Revisar</b></button></header>
-    <div class="segmento" role="tablist">${[['vivos', 'Vivos'], ['muertos', 'Muertos'], ['todos', 'Todos']].map(([k, t]) => `<button class="${f.estado === k ? 'activa' : ''}" data-p="estado" data-v="${k}">${t}</button>`).join('')}</div>
-    <label class="campo buscar"><input id="p-q" type="search" inputmode="search" placeholder="Buscar por nombre o número" value="${esc(f.q)}" autocomplete="off"></label>
-    <details class="filtros" ${activos ? 'open' : ''}><summary>Filtros${activos ? ` <span class="cuenta">${activos}</span>` : ''}</summary>
-      <div class="dos">
-        <label class="campo"><span>Etapa</span><select data-filtro="etapa">${opciones(ETAPAS, f.etapa, 'Todas')}</select></label>
-        <label class="campo"><span>Línea</span><select data-filtro="linea">${opciones(LINEAS, f.linea, 'Todas')}</select></label>
-        <label class="campo"><span>Nicho</span><select data-filtro="nicho">${opciones(nichos, f.nicho, 'Todos')}</select></label>
-        <label class="campo"><span>País</span><select data-filtro="pais">${opciones(paises, f.pais, 'Todos')}</select></label>
+    <div class="card glass hero">
+      <div class="lbl">Tu recorrido</div>
+      <div class="big" data-n="${r.total}">${r.total}</div>
+      <div class="small">personas escritas desde que empezaste</div>
+      <div class="semanas" aria-label="Total por semana">${r.semanas.map(x => `<div><i data-h="${alto(x.total)}"></i><small>${fechaCorta(x.desde).split(' ')[0]}</small></div>`).join('')}</div>
+      <div class="row" style="margin-top:12px">
+        <div><div class="lbl">Esta semana</div><div class="amt" style="text-align:left">+${r.semana}</div></div>
+        <div><div class="lbl">Hoy</div><div class="amt" style="text-align:left">${r.hoy.escritos} de ${r.hoy.total}</div></div>
+        <div><div class="lbl">Clientes</div><div class="amt" style="text-align:left">${r.clientes}</div></div>
       </div>
-      <label class="campo"><span>Tanda</span><select data-filtro="tanda">${opciones(tandas, f.tanda, 'Todas')}</select></label>
-      <label class="campo"><span>Orden</span><select data-filtro="orden">${[['accion', 'Próxima acción'], ['fecha', 'Fecha del primer mensaje'], ['nombre', 'Nombre']].map(([k, t]) => `<option value="${k}" ${f.orden === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-      <button class="btn suave" data-p="limpiar">Quitar filtros</button>
-    </details>
-    <section class="bloque lista-prospectos" id="p-lista">${filas()}</section><div class="aire"></div>`;
-  if (!enlazado) { enlazar(vista); enlazado = true; }
+      <div class="small" style="margin-top:10px">Cada vez que alguien no responde, se suma aquí solo.</div>
+    </div>
+
+    <div class="card glass">
+      <div class="sec"><h3>Tanda de hoy</h3><span class="chip gray">${r.hoy.total ? `${r.hoy.escritos} de ${r.hoy.total} escritos` : 'Sin tanda'}</span></div>
+      ${tanda.map(p => `<div class="item" data-p="${p.id}">
+        <div class="ic">${iconoProspecto(p)}</div>
+        <div class="grow" data-estado="${p.id}"><div class="name">${esc(p.negocio)}</div><div class="small">${esc([p.linea, p.zona].filter(Boolean).join(' · '))}</div></div>
+        <button class="btn wa" data-escribir="${p.id}">Escribir</button></div>`).join('')}
+      ${!tanda.length ? `<p class="vacio">${r.hoy.total ? '¡Listo! Escribiste toda la tanda de hoy.' : 'Todavía no llega la tanda de hoy. La arma Claude en el chat y aparece aquí sola.'}</p>` : ''}
+      ${reservas.length ? `<details class="reservas"><summary>Reservas (${reservas.length})</summary>${reservas.map(p => `<div class="item">
+        <div class="ic">${iconoProspecto(p)}</div><div class="grow" data-estado="${p.id}"><div class="name">${esc(p.negocio)}</div><div class="small">${esc(p.linea)} · reserva</div></div>
+        <button class="btn wa" data-escribir="${p.id}">Escribir</button></div>`).join('')}</details>` : ''}
+      ${tanda.length ? '<p class="note">Al tocar Escribir se abre WhatsApp con el mensaje listo</p>' : ''}
+    </div>
+
+    <div class="card glass">
+      <div class="sec"><h3>Seguimientos de hoy</h3><span class="chip ${segs.length ? 'red' : 'gray'}">${segs.length}</span></div>
+      ${segs.map(x => `<div class="item">
+        <div class="ic">${iconoProspecto(x.p)}</div>
+        <div class="grow" data-estado="${x.p.id}"><div class="name">${esc(x.p.negocio)}</div>
+          <div class="small">${esc(x.p.tanda || 'Sin tanda')} · ${ordinal(x.numero)} seguimiento${x.atraso ? ` · <b style="color:#a8322e">atrasado ${plural(x.atraso, 'día', 'días')}</b>` : ''}</div></div>
+        <button class="btn light chico" data-seguir="${x.p.id}">Seguimiento</button></div>`).join('') || '<p class="vacio">Hoy no toca ningún seguimiento.</p>'}
+      <p class="note">Vienen de tandas anteriores. Nunca se mezclan con la de hoy.</p>
+    </div>
+
+    <div class="card glass">
+      <div class="sec"><h3>Te respondieron</h3><span class="chip ${resp.length ? '' : 'gray'}">${resp.length}</span></div>
+      ${resp.map(p => `<div class="item" data-estado="${p.id}">
+        <div class="ic">${iconoProspecto(p)}</div>
+        <div class="grow"><div class="name">${esc(p.negocio)}</div>
+          <div class="small">${esc(p.proximoPaso || 'Sin próximo paso')}${p.proximaFecha ? ` · <span ${p.proximaFecha < hoy ? 'style="color:#a8322e;font-weight:700"' : ''}>${cuandoPaso(p.proximaFecha, hoy)}</span>` : ''}</div></div>
+        <span class="chip ${CHIP_ETAPA[p.etapa] ?? ''}">${esc(p.etapa)}</span></div>`).join('') || '<p class="vacio">Cuando alguien te responda, tócalo en la tanda o en los seguimientos.</p>'}
+    </div>
+    <p class="note"><button class="link" data-pegar>Pegar tanda</button></p>`;
 }
 
-function enlazar(vista) {
-  enlazarFilas(vista, buscarProspecto);
-  const repintarLista = () => { const c = $('#p-lista', vista); if (c) c.innerHTML = filas(); };
-  vista.addEventListener('input', e => { if (e.target.id === 'p-q') { f.q = e.target.value; f.limite = PASO; repintarLista(); } });
-  vista.addEventListener('change', e => {
-    const k = e.target.dataset?.filtro; if (!k) return;
-    f[k] = e.target.value; f.limite = PASO; pintarProspectos(vista);
-  });
-  vista.addEventListener('click', e => {
-    if (e.target.closest('[data-mas]')) { f.limite += PASO; return repintarLista(); }
-    const b = e.target.closest('[data-p]'); if (!b) return;
-    if (b.dataset.p === 'estado') { f.estado = b.dataset.v; f.limite = PASO; pintarProspectos(vista); }
-    if (b.dataset.p === 'limpiar') { Object.assign(f, { etapa: '', linea: '', nicho: '', pais: '', tanda: '' }); pintarProspectos(vista); }
-    if (b.dataset.p === 'revisar') abrirRevision();
-  });
+// ---------- Acciones ----------
+async function escribir(id) {
+  const p = buscar(id), hoy = hoyISO();
+  if (!p) return;
+  abrirWhatsApp(P.linkWhatsApp(p.telefono, p.mensaje || 'Hola, buenas. Me llamo Carlos.'));
+  P.marcarEscrito(s, p, hoy);
+  if (P.tandaDeHoy(s, hoy).length === 0 && P.avanceDeHoy(s, hoy).total) aviso('¡Tanda de hoy completa! Se pintó tu día en Metas.');
+  await guardar();
 }
 
-// «¿Ya le escribí?»: pego un número o un nombre y me dice si ya existe.
-export function abrirRevision() {
+async function seguir(id) {
+  const p = buscar(id), hoy = hoyISO();
+  if (!p) return;
+  const n = (p.seguimientos || []).length + 1;
+  abrirWhatsApp(P.linkWhatsApp(p.telefono, P.mensajeSeguimiento(p, n)));
+  P.marcarSeguimiento(p, hoy);
+  await guardar();
+}
+
+function hojaEstado(id) {
+  const p = buscar(id);
+  if (!p) return;
+  let elegido = P.RESPONDIERON.includes(p.etapa) ? p.etapa : '';
   const cuerpo = abrirHoja(`
-    <p class="eyebrow">Revisión rápida</p><h3 class="hoja-titulo">¿Ya le escribí?</h3>
-    <label class="campo"><span>Número o nombre del negocio</span><input id="rv-q" type="search" inputmode="search" placeholder="0412… o el nombre" autocomplete="off"></label>
-    <div id="rv-res"></div>`);
-  const res = $('#rv-res', cuerpo);
-  $('#rv-q', cuerpo).addEventListener('input', e => {
-    const q = e.target.value.trim();
-    if (q.length < 3) { res.innerHTML = ''; return; }
-    const dig = q.replace(/\D/g, '');
-    let hallados = [];
-    if (dig.length >= 7) { const r = buscarRepetido(estado.prospectos, { telefono: q }); if (r) hallados = [r]; }
-    else { const n = normalizarNombre(q); hallados = estado.prospectos.filter(p => normalizarNombre(p.negocio).includes(n)).slice(0, 6); }
-    res.innerHTML = hallados.length
-      ? hallados.map(p => `<article class="resultado ya" data-id="${esc(p.id)}"><b>${esc(p.negocio)}</b> ${chipEtapa(p.etapa)}<p>${esc(describirRepetido(p))}</p></article>`).join('')
-      : `<article class="resultado nuevo"><b>No está en tu lista</b><p>Puedes escribirle: no le has mandado nada.</p><button class="btn primario" data-nuevo="${esc(q)}">Agregarlo</button></article>`;
-  });
-  res.addEventListener('click', e => {
-    const a = e.target.closest('[data-id]'); if (a) { cerrarHoja(true); return abrirFicha(a.dataset.id); }
-    const n = e.target.closest('[data-nuevo]'); if (n) { const v = n.dataset.nuevo, dig = v.replace(/\D/g, ''); cerrarHoja(true); abrirNuevo(dig.length >= 7 ? { telefono: v } : { negocio: v }); }
+    <div class="sec"><h3>${esc(p.negocio)}</h3><button class="link" data-cerrar>Cerrar</button></div>
+    <div class="small" style="margin:-4px 0 10px">${esc([p.tanda, p.zona, p.escrito ? `escrito el ${fechaCorta(p.escrito)}` : 'sin escribir'].filter(Boolean).join(' · '))}. ¿En qué quedó?</div>
+    <div class="opts">${P.ETAPAS_HOJA.map(([e, t]) => `<button type="button" data-etapa="${e}" class="${e === elegido ? 'on' : ''}">${t}</button>`).join('')}</div>
+    <label class="f">Próximo paso<input id="h-paso" value="${esc(p.proximoPaso || '')}" placeholder="Mandarle la demostración"></label>
+    <label class="f">Fecha<input id="h-fecha" type="date" value="${p.proximaFecha || ''}"></label>
+    <button class="btn dark full" id="h-guardar" style="margin-top:6px">Guardar</button>
+    ${p.telefono ? `<button class="btn light full" id="h-wa" style="margin-top:8px">Abrir WhatsApp</button>` : ''}`);
+  cuerpo.addEventListener('click', async e => {
+    const b = e.target.closest('[data-etapa]');
+    if (b) { elegido = b.dataset.etapa; $$('[data-etapa]', cuerpo).forEach(x => x.classList.toggle('on', x === b)); return; }
+    if (e.target.closest('#h-wa')) { abrirWhatsApp(`https://wa.me/${p.telefono}`); return; }
+    if (!e.target.closest('#h-guardar')) return;
+    const paso = $('#h-paso', cuerpo).value.trim(), fecha = $('#h-fecha', cuerpo).value, hoy = hoyISO();
+    if (!elegido) {
+      if (P.RESPONDIERON.includes(p.etapa)) { p.proximoPaso = paso; p.proximaFecha = fecha; cerrarHoja(true); await guardar(); }
+      else aviso('Elige en qué quedó');
+      return;
+    }
+    cerrarHoja(true);
+    if (elegido === 'Cliente') {
+      formCliente(null, { datos: { negocio: p.negocio, telefono: p.telefono, contacto: p.contacto || '', zona: p.zona, linea: p.linea, servicio: P.SERVICIO_DE_LINEA[p.linea] || 'Página web' },
+        alGuardar: () => P.cambiarEtapa(s, p, 'Cliente', {}, hoy) });
+      return;
+    }
+    const salio = P.cambiarEtapa(s, p, elegido, { paso, fecha }, hoy);
+    aviso(salio ? `${p.negocio} pasó al historial` : `${p.negocio}: ${elegido}`);
+    await guardar();
   });
 }
+
+function hojaPegar() {
+  const cuerpo = abrirHoja(`
+    <div class="sec"><h3>Pegar tanda</h3><button class="link" data-cerrar>Cerrar</button></div>
+    <p class="small">Solo por si un día la tanda no llega sola. Pega aquí el texto que te pase Claude.</p>
+    <label class="f"><textarea id="t-pegar" placeholder='{"tipo":"tanda", ...}'></textarea></label>
+    <button class="btn dark full" id="t-ok">Agregar tanda</button>`);
+  $('#t-ok', cuerpo).addEventListener('click', async () => {
+    const txt = $('#t-pegar', cuerpo).value.trim();
+    try {
+      const msg = aplicarTexto('tandas', txt);
+      cerrarHoja(true);
+      aviso(msg || 'Esa tanda ya estaba');
+      await guardar();
+    } catch (e) { aviso(e instanceof SyntaxError ? 'El texto no está completo. Cópialo de nuevo.' : e.message); }
+  });
+}
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  const w = t.closest('[data-escribir]'); if (w) { escribir(w.dataset.escribir); return; }
+  const sg = t.closest('[data-seguir]'); if (sg) { seguir(sg.dataset.seguir); return; }
+  if (t.closest('[data-pegar]')) { hojaPegar(); return; }
+  const est = t.closest('[data-estado]'); if (est) hojaEstado(est.dataset.estado);
+});

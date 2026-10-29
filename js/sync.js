@@ -1,99 +1,102 @@
-// Sincronización con Claude: un repo privado de GitHub como buzón (API de contenidos, token fino).
-//   tandas/*.json y cambios/*.json  -> los escribe Claude, la app los lee y los aplica una sola vez
-//   estado/estado.json, estado/respaldo.json -> los escribe la app
-import { estado, alCambiar, guardarMeta } from './estado.js';
-import { hoyISO, fechaDMA, difDias } from './util.js';
-import { leerJSON } from './datos.js';
-import { validarTanda, prepararTanda, validarCambios, prepararCambios } from './tandas.js';
-import { importarTanda, importarCambios } from './ui/importar.js';
-import { aviso } from './ui/comun.js';
-import { construirEstadoNube, construirRespaldoNube, aBase64, deBase64, huella, sinHora } from './sync-datos.js';
+// Sincronización con Claude: el repo privado mi-negocio-datos es el buzón (API de contenidos, token fino).
+//   inicial/arranque-v2.json (una sola vez), tandas/*.json, cambios/*.json y aprendizajes/*.json -> los escribe Claude
+//   estado/estado.json y estado/respaldo.json -> los escribe la app
+// Cada archivo se aplica una sola vez por versión (sha).
+import { s, guardar, alCambiar } from './datos.js';
+import { hoyISO } from './util.js';
+import { validarTanda, prepararTanda, aplicarTanda, mantener } from './logica/prospectos.js';
+import { validarCambios, aplicarCambios } from './logica/cambios.js';
+import { validarArranque, aplicarArranque, construirEstado, construirRespaldo, huella, sinHora, aBase64 } from './logica/nube.js';
 
 export const REPO = 'mi-negocio-datos';
-const ESPERA_MS = 30000;
 const API = 'https://api.github.com';
+const ESPERA_MS = 20000;
 
-export const config = () => estado.meta.sync || null;
+export const config = () => s.meta.sync || null;
 export const conectado = () => !!config()?.token;
-const guardarConfig = c => guardarMeta('sync', c);
+const guardarConfig = async c => { s.meta.sync = c; await guardar({ avisar: false }); };
 
-// ---------- Conexión con la API ----------
 class ErrorSync extends Error {}
-const explicar = status => ({
+const explicar = st => ({
   401: 'El token no sirve o ya venció. Crea uno nuevo en GitHub.',
   403: 'El token no tiene permiso. Tiene que poder leer y escribir Contenidos del repo.',
   404: `No encuentro el repo ${REPO}. Revisa el usuario y que el token tenga acceso a ese repo.`,
-}[status] || `GitHub respondió con el error ${status}.`);
+}[st] || `GitHub respondió con el error ${st}.`);
 
-async function api(ruta, { metodo = 'GET', cuerpo, raw = false } = {}) {
-  const c = config();
-  if (!c?.token) throw new ErrorSync('Falta conectar con Claude en Más.');
-  let res;
+async function api(ruta, { metodo = 'GET', cuerpo, raw = false, c = config() } = {}) {
+  if (!c?.token) throw new ErrorSync('Falta conectar con Claude.');
   try {
-    res = await fetch(`${API}/repos/${c.usuario}/${REPO}${ruta}`, {
+    return await fetch(`${API}/repos/${c.usuario}/${REPO}${ruta}`, {
       method: metodo, cache: 'no-store',
       headers: { Authorization: `Bearer ${c.token}`, Accept: raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(cuerpo ? { 'Content-Type': 'application/json' } : {}) },
       body: cuerpo ? JSON.stringify(cuerpo) : undefined,
     });
   } catch { throw new ErrorSync('No hay internet.'); }
-  return res;
-}
-
-export async function probarConexion(usuario, token) {
-  const previo = config();
-  estado.meta.sync = { ...(previo || {}), usuario, token };      // solo en memoria hasta que funcione
-  try {
-    const res = await api('');
-    if (!res.ok) return { ok: false, mensaje: explicar(res.status) };
-    const repo = await res.json();
-    if (repo.permissions && repo.permissions.push === false) return { ok: false, mensaje: 'Puede leer pero no escribir. Falta el permiso de Contenidos: lectura y escritura.' };
-    return { ok: true, mensaje: 'Conectado. La app ya puede hablar con Claude.' };
-  } catch (e) { return { ok: false, mensaje: e.message }; }
-  finally { estado.meta.sync = previo; }
 }
 
 export async function conectar(usuario, token) {
-  const r = await probarConexion(usuario, token);
-  if (r.ok) { await guardarConfig({ usuario, token, aplicados: config()?.aplicados || {}, huellas: {}, conectadoEl: hoyISO() }); sincronizar(); }
-  return r;
+  const c = { usuario: usuario.trim(), token: token.trim(), aplicados: config()?.aplicados || {}, huellas: {} };
+  try {
+    const res = await api('', { c });
+    if (!res.ok) return { ok: false, mensaje: explicar(res.status) };
+    const repo = await res.json();
+    if (repo.permissions && repo.permissions.push === false) return { ok: false, mensaje: 'Puede leer pero no escribir. Falta el permiso de Contenidos: lectura y escritura.' };
+  } catch (e) { return { ok: false, mensaje: e.message }; }
+  await guardarConfig(c);
+  return { ok: true, mensaje: 'Conectado. La app ya habla con Claude.' };
 }
-export async function desconectar() { estado.meta.sync = null; await guardarMeta('sync', null); }
+export async function desconectar() { s.meta.sync = null; await guardar({ avisar: false }); }
 
 // ---------- Recibir ----------
 async function listar(carpeta) {
   const res = await api(`/contents/${carpeta}`);
-  if (res.status === 404) return [];     // todavía no existe la carpeta
+  if (res.status === 404) return [];
   if (!res.ok) throw new ErrorSync(explicar(res.status));
   return (await res.json()).filter(f => f.type === 'file' && f.name.endsWith('.json')).sort((a, b) => a.name.localeCompare(b.name));
 }
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
 
-const dm = f => (f ? fechaDMA(f).slice(0, 5) : '');
+// Aplica un archivo ya leído. También lo usa «Pegar tanda». Devuelve el aviso para mostrar.
+export function aplicarTexto(carpeta, texto, archivo = '') {
+  const obj = JSON.parse(texto), hoy = hoyISO();
+  if (carpeta === 'inicial') {
+    const err = validarArranque(obj); if (err) throw new Error(err);
+    if (s.meta.arranque || s.clientes.length || s.historial.length) { s.meta.arranque ||= hoy; return ''; }
+    aplicarArranque(s, obj); s.meta.arranque = hoy;
+    return `Datos de arranque: ${plural(s.clientes.length, 'cliente', 'clientes')} y ${s.historial.length + s.prospectos.length} personas en tu recorrido`;
+  }
+  if (carpeta === 'tandas') {
+    const err = validarTanda(obj); if (err) throw new Error(err);
+    const prep = prepararTanda(s, obj, { archivo });
+    const n = aplicarTanda(s, prep);
+    if (!prep.tanda) return '';
+    return `Llegaron ${plural(n, 'negocio nuevo', 'negocios nuevos')} (${prep.tanda.nombre})${prep.repetidos.length ? `, ${prep.repetidos.length} ya los tenías` : ''}`;
+  }
+  if (carpeta === 'cambios') {
+    const err = validarCambios(obj); if (err) throw new Error(err);
+    const r = aplicarCambios(s, obj, hoy, s.meta.tasa);
+    return r.avisos.length ? `Claude actualizó: ${r.avisos.slice(0, 3).join(' · ')}${r.avisos.length > 3 ? ' y más' : ''}` : (r.errores[0] || '');
+  }
+  if (Array.isArray(obj.aprendizajes)) s.meta.aprendizajes = obj.aprendizajes;   // se guardan, no se muestran
+  return '';
+}
 
-export async function recibir() {
+async function recibir() {
   const c = config(), mensajes = [];
-  for (const carpeta of ['tandas', 'cambios']) {
+  c.aplicados ||= {};
+  for (const carpeta of ['inicial', 'tandas', 'cambios', 'aprendizajes']) {
     for (const f of await listar(carpeta)) {
+      if (carpeta === 'inicial' && f.name !== 'arranque-v2.json') continue;      // datos-v3.json es de la v1
       if (c.aplicados[f.path] === f.sha) continue;
       const res = await api(`/contents/${f.path}`, { raw: true });
       if (!res.ok) throw new ErrorSync(explicar(res.status));
       let msg = '';
-      try {
-        const obj = leerJSON(await res.text());
-        if (carpeta === 'tandas') {
-          const err = validarTanda(obj); if (err) throw new Error(err);
-          const prep = prepararTanda(estado.prospectos, obj);
-          const creados = await importarTanda(prep);
-          msg = `Llegó la tanda${obj.fecha ? ' del ' + dm(obj.fecha) : ''}: ${creados.length} negocio${creados.length === 1 ? '' : 's'} nuevo${creados.length === 1 ? '' : 's'}${prep.ya.length ? ` (${prep.ya.length} ya ${prep.ya.length === 1 ? 'lo tenías y no se agregó' : 'los tenías y no se agregaron'})` : ''}`;
-        } else {
-          const err = validarCambios(obj); if (err) throw new Error(err);
-          const prep = prepararCambios(estado.prospectos, obj);
-          await importarCambios(prep);
-          msg = `Llegaron cambios de Claude: ${prep.lista.length} negocio${prep.lista.length === 1 ? '' : 's'} actualizado${prep.lista.length === 1 ? '' : 's'}`;
-        }
-      } catch (e) { msg = `No pude leer ${f.path}: ${e.message}`; }
-      c.aplicados[f.path] = f.sha;                  // se anota siempre: un archivo corregido trae otro sha y se vuelve a leer
+      try { msg = aplicarTexto(carpeta, await res.text(), f.path); }
+      catch (e) { msg = `No pude leer ${f.path}: ${e.message}`; }
+      c.aplicados[f.path] = f.sha;
+      mantener(s, hoyISO());
       await guardarConfig(c);
-      mensajes.push(msg);
+      if (msg) mensajes.push(msg);
     }
   }
   return mensajes;
@@ -112,48 +115,43 @@ async function subir(ruta, texto, mensaje) {
 }
 
 let enviando = false;
-export async function enviar({ forzar = false } = {}) {
+async function enviar() {
   if (!conectado() || enviando) return false;
   enviando = true;
-  const c = config(), hoy = hoyISO(), ahora = new Date().toISOString();
+  const c = config(), hoy = hoyISO();
   try {
-    const archivos = [
-      ['estado/estado.json', construirEstadoNube(estado, hoy, ahora), 'Estado de Mi Negocio'],
-      ['estado/respaldo.json', construirRespaldoNube(estado, hoy), 'Respaldo de Mi Negocio'],
-    ];
-    for (const [ruta, obj, msg] of archivos) {
+    for (const [ruta, obj, msg] of [
+      ['estado/estado.json', construirEstado(s, hoy, new Date().toISOString()), 'Estado de Mi Negocio'],
+      ['estado/respaldo.json', construirRespaldo(s, hoy), 'Respaldo de Mi Negocio'],
+    ]) {
       const h = huella(sinHora(obj));
-      if (!forzar && c.huellas?.[ruta] === h) continue;
+      if (c.huellas?.[ruta] === h) continue;
       await subir(ruta, JSON.stringify(obj, null, 1), msg);
       (c.huellas ||= {})[ruta] = h;
     }
-    c.ultimaOk = Date.now(); c.falloDesde = null; c.sucio = false; c.error = '';
+    c.ultimaOk = Date.now(); c.error = '';
     await guardarConfig(c);
     return true;
-  } catch (e) {
-    c.error = e.message; if (!c.falloDesde) c.falloDesde = hoy;
-    await guardarConfig(c);
-    return false;
-  } finally { enviando = false; }
+  } catch (e) { c.error = e.message; await guardarConfig(c); return false; }
+  finally { enviando = false; }
 }
 
-export async function sincronizar({ silencioso = true, forzar = false } = {}) {
-  if (!conectado()) return { ok: false, mensajes: [] };
-  const c = config();
-  try {
-    const mensajes = await recibir();
-    mensajes.forEach(m => aviso(m));
-    const ok = await enviar({ forzar: forzar || c.sucio });
-    c.ultimaRevision = Date.now(); await guardarConfig(c);
-    return { ok, mensajes };
-  } catch (e) {
-    c.error = e.message; c.ultimaRevision = Date.now(); await guardarConfig(c);
-    if (!silencioso) aviso(e.message);
-    return { ok: false, mensajes: [], error: e.message };
-  }
+// Una sola sincronización a la vez.
+let enCurso = null;
+export function sincronizar() {
+  if (!enCurso) enCurso = (async () => {
+    if (!conectado()) return { ok: false, mensajes: [] };
+    const c = config();
+    try {
+      const mensajes = await recibir();
+      const ok = await enviar();
+      c.ultimaRevision = Date.now(); await guardarConfig(c);
+      return { ok, mensajes };
+    } catch (e) { c.error = e.message; c.ultimaRevision = Date.now(); await guardarConfig(c); return { ok: false, mensajes: [], error: e.message }; }
+  })().finally(() => { enCurso = null; });
+  return enCurso;
 }
 
-// Tiempo en lenguaje de todos los días.
 export function haceCuanto(ms) {
   if (!ms) return 'nunca';
   const m = Math.round((Date.now() - ms) / 60000);
@@ -163,27 +161,14 @@ export function haceCuanto(ms) {
   return h < 24 ? `hace ${h} h` : `hace ${Math.round(h / 24)} días`;
 }
 
-// Hace que «haz respaldo» solo salga si la subida lleva 7 días fallando.
-export const subidaFallando = hoy => !!config()?.falloDesde && difDias(hoy, config().falloDesde) >= 7;
-
-// ---------- Arranque ----------
-let temporizador;
-let iniciada = false;
-export function iniciarSync() {
-  if (iniciada) return;
-  iniciada = true;
-  const marcarSucio = () => {
-    if (!conectado()) return;
-    const c = config();
-    if (!c.sucio) { c.sucio = true; guardarConfig(c); }
-    clearTimeout(temporizador);
-    temporizador = setTimeout(() => enviar(), ESPERA_MS);
-  };
-  alCambiar(marcarSucio);
+// Revisa al abrir y al volver a la app; sube los cambios unos segundos después de hacerlos.
+export function iniciarSync(alTerminar) {
+  let t;
+  alCambiar(() => { if (!conectado()) return; clearTimeout(t); t = setTimeout(() => enviar(), ESPERA_MS); });
+  const revisar = () => sincronizar().then(r => alTerminar?.(r));
   document.addEventListener('visibilitychange', () => {
     if (!conectado()) return;
-    if (document.hidden) { clearTimeout(temporizador); if (config().sucio) enviar(); }
-    else sincronizar();
+    if (document.hidden) { clearTimeout(t); enviar(); } else revisar();
   });
-  sincronizar();
+  revisar();
 }

@@ -8,3 +8,6 @@ test/datos-reales/
 shots/
 node_modules/
 CLAUDE.md
+datos-v3.json
+panel-referencia.html
+referencia-v2.html

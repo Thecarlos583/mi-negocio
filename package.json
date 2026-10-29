@@ -1,1 +1,1 @@
-{ "name": "mi-negocio", "private": true, "type": "module", "scripts": { "test": "node --test \"test/*.test.js\" \"test/datos-reales/*.test.js\"" } }
+{ "name": "mi-negocio", "private": true, "type": "module", "scripts": { "test": "node --test test/v2.test.js" } }
