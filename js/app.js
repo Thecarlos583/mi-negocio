@@ -20,6 +20,7 @@ export function ir(v, { animar = true } = {}) {
   actual = v;
   $$('.view').forEach(e => e.classList.toggle('on', e.id === 'v-' + v));
   $$('.nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  moverPildora(v);
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   const el = $('#v-' + v), y = scrollY;
   VISTAS[v](el);
@@ -35,7 +36,56 @@ export function ir(v, { animar = true } = {}) {
 }
 const repintar = () => actual && ir(actual, { animar: false });
 
-$$('.nav button').forEach(b => b.addEventListener('click', () => { cerrarHoja(true); ir(b.dataset.v); }));
+$$('.nav button').forEach(b => b.addEventListener('click', () => { if (arrastre.movio) return; cerrarHoja(true); ir(b.dataset.v); }));
+
+// ---------- Barra de abajo: píldora de vidrio que se desliza y se puede arrastrar ----------
+const ORDEN = ['inicio', 'clientes', 'prospectos', 'metas'];
+const nav = $('.nav'), pildora = $('.nav-pill');
+function moverPildora(v) {
+  const b = $(`.nav button[data-v="${v}"]`);
+  if (!b || !pildora) return;
+  pildora.style.setProperty('--w', b.offsetWidth + 'px');
+  pildora.style.setProperty('--x', b.offsetLeft + 'px');
+}
+addEventListener('resize', () => actual && moverPildora(actual));
+const arrastre = { activo: false, movio: false, x0: 0 };
+nav.addEventListener('pointerdown', e => { arrastre.activo = true; arrastre.movio = false; arrastre.x0 = e.clientX; });
+nav.addEventListener('pointermove', e => {
+  if (!arrastre.activo) return;
+  if (!arrastre.movio && Math.abs(e.clientX - arrastre.x0) < 8) return;
+  if (!arrastre.movio) { arrastre.movio = true; nav.classList.add('arrastrando'); nav.setPointerCapture(e.pointerId); }
+  const r = nav.getBoundingClientRect(), w = pildora.offsetWidth;
+  pildora.style.setProperty('--x', Math.max(6, Math.min(r.width - w - 6, e.clientX - r.left - w / 2)) + 'px');
+});
+const soltar = e => {
+  if (!arrastre.activo) return;
+  arrastre.activo = false;
+  if (!arrastre.movio) return;
+  nav.classList.remove('arrastrando');
+  const r = nav.getBoundingClientRect(), x = e.clientX - r.left;
+  let mejor = actual, d = Infinity;
+  $$('.nav button').forEach(b => { const c = Math.abs(b.offsetLeft + b.offsetWidth / 2 - x); if (c < d) { d = c; mejor = b.dataset.v; } });
+  cerrarHoja(true);
+  if (mejor !== actual) ir(mejor); else moverPildora(actual);
+  setTimeout(() => { arrastre.movio = false; }, 50);
+};
+nav.addEventListener('pointerup', soltar);
+nav.addEventListener('pointercancel', soltar);
+
+// Deslizar el dedo a los lados en la pantalla cambia de pestaña.
+let toque = null;
+$('.app').addEventListener('touchstart', e => {
+  if (e.touches.length !== 1 || e.target.closest('.steps, input, textarea, select, .hoja')) { toque = null; return; }
+  toque = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+}, { passive: true });
+$('.app').addEventListener('touchend', e => {
+  if (!toque) return;
+  const dx = e.changedTouches[0].clientX - toque.x, dy = e.changedTouches[0].clientY - toque.y, dt = Date.now() - toque.t;
+  toque = null;
+  if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6 || dt > 700 || document.querySelector('.hoja-fondo')) return;
+  const i = ORDEN.indexOf(actual) + (dx < 0 ? 1 : -1);
+  if (i >= 0 && i < ORDEN.length) ir(ORDEN[i]);
+}, { passive: true });
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-ir]'); if (a) { e.preventDefault(); ir(a.dataset.ir); return; }
   if (e.target.closest('#yo, [data-ajustes]')) hojaAjustes(alSincronizar);
