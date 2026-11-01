@@ -183,3 +183,17 @@ test('migración de los datos viejos y estado para Claude', () => {
   // El 26 tocaba el 1.er seguimiento de «Reciente»: sale atrasado
   assert.equal(P.seguimientosDeHoy(s, '2026-10-29')[0].atraso, 3);
 });
+
+test('cambios desde el chat: marcar escrito con fecha pasada sin contar respuesta', () => {
+  const s = vacio();
+  llega(s, tanda('2026-11-01', 2), 'a');
+  const r = aplicarCambios(s, { cambios: [
+    { op: 'escrito', telefono: '584121000000', fecha: '2026-10-31' },
+    { op: 'escrito', telefono: '584121000000', fecha: '2026-11-01' },
+  ] }, '2026-11-01', { usd: 300 });
+  const p = s.prospectos.find(p => p.telefono === '584121000000');
+  assert.equal(p.escrito, '2026-10-31');
+  assert.equal(p.etapa, 'Escrito');
+  assert.equal(p.respondio, undefined);
+  assert.equal(r.errores.length, 0);
+});

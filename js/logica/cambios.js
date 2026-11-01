@@ -82,6 +82,13 @@ export function aplicarCambios(s, obj, hoy, tasa) {
         if (p.escrito) continue;
         p.mensaje = String(x.mensaje || p.mensaje);
         avisos.push(`Mensaje nuevo: ${p.negocio}`);
+      } else if (x.op === 'escrito') {
+        // Marca como escrito a alguien al que ya se le escribió (por ejemplo, ayer) sin contarlo como respuesta.
+        const p = buscarProspecto(s, x);
+        if (!p) { errores.push(`No encontré a ${x.negocio || x.telefono}`); continue; }
+        if (p.escrito) continue;
+        p.escrito = x.fecha || hoy; p.etapa = 'Escrito'; p.seguimientos = [];
+        avisos.push(`Escrito: ${p.negocio}`);
       } else if (x.op === 'cerrar_tanda') {
         const lista = s.prospectos.filter(p => p.tanda === x.tanda && p.etapa === 'Escrito');
         lista.forEach(p => cambiarEtapa(s, p, 'No respondió', {}, hoy));
